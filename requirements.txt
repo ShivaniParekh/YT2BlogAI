@@ -2,3 +2,4 @@ python-dotenv
 langchain_groq
 youtube_transcript_api
 langgraph
+streamlit
