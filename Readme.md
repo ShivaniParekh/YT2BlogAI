@@ -1,7 +1,6 @@
 
 # 🎥 YouTube Blog Generator  
 ![GitHub Repo stars](https://img.shields.io/github/stars/ShivaniParekh/1-BlogGenerator)
- 
 ![GitHub forks](https://img.shields.io/github/forks/ShivaniParekh/1-BlogGenerator)  
 ![GitHub license](https://img.shields.io/github/license/ShivaniParekh/1-BlogGenerator)  
 
