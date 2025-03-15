@@ -1,5 +1,5 @@
 import streamlit as st
-from bloggenerator import run_pipeline
+from bloggenerator import *
 
 def main():
     st.title("🎥 YouTube Blog Generator")
@@ -20,7 +20,7 @@ def main():
         final_blog  = run_pipeline(video_url, model_name)
 
         # # Display the graph output
-        
+
         # st.subheader("LangGraph Workflow:")
         # st.image(graph_image, caption="Graph Execution Flow", use_container_width=True)
 
