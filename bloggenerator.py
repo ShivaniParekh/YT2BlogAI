@@ -25,10 +25,7 @@ def extract_transcript(state: State) -> State:
         raise KeyError("Missing 'video_url' in state.")
     
     video_url = state["video_url"].strip()
-    # if video_url.startswith("https://www.youtube.com/watch?v="):
-    #     video_id = state["video_url"].split("v=")[-1].split("&")[0]
-    # elif video_url.startswith("https://youtu.be/"):
-    #     video_id = video_url.split("/")[-1].split("?")[0]  # Extract last part after "/"
+
     video_id=""
     if "youtube.com/watch?v=" in video_url:
         video_id = video_url.split("v=")[-1].split("&")[0]  # Extract ID
@@ -74,20 +71,24 @@ def generate_graph(llm):
     builder.add_edge("generate_blog", END)
 
     graph = builder.compile()  # Compile the LangGraph object
-    graph_image = None
+    # graph_image = None
 
-    try:
-        graph_image = graph.get_graph().draw_mermaid_png()  # Generate image (if possible)
-    except Exception as e:
-        print(f"Warning: Could not generate graph image. Error: {e}")
+    #Uncomment this if you want to generate image
+    # try:
+    #     graph_image = graph.get_graph().draw_mermaid_png()  # Generate image (if possible)
+    # except Exception as e:
+    #     print(f"Warning: Could not generate graph image. Error: {e}")
 
-    return graph, graph_image  # Now it always returns two values
+    return graph    # graph, graph_image - Uncomment this if you want to generate image
 
 
 
 def run_pipeline(video_url: str, model_name: str):
     llm = initialize_model(model_name)
-    graph, graph_image = generate_graph(llm)  # Get both
+
+
+    # graph, graph_image = generate_graph(llm) #Uncomment this if you want to generate image
+    graph = generate_graph(llm)  # Get both
 
     initial_state: State = {"video_url": video_url, "transcript": "", "blog": ""}
     print("✅ Graph Created. Invoking the pipeline...")
@@ -95,7 +96,7 @@ def run_pipeline(video_url: str, model_name: str):
     final_state = graph.invoke(initial_state)  # Now graph is correct
     print("✅ Pipeline Execution Complete.")
 
-    return final_state["blog"], graph_image  # Return final blog & graph image
+    return final_state["blog"]  # Return final blog & graph image #return final_state["blog"], graph_image , if you want graph_image displayed
 
 
 

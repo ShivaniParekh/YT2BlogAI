@@ -10,17 +10,19 @@ def main():
     video_url = st.text_input("Enter the YouTube video URL:")
 
     # Model selection
-    model_name = st.selectbox("Select Groq Model:", ["qwen-2.5-32b", "gemma-7b", "mixtral-8x7b"])
+    model_name = st.selectbox("Select Groq Model:", ["qwen-2.5-32b", "gemma2-9b-it", "mixtral-8x7b-32768"])
 
     if st.button("Generate Blog") and video_url:
         st.write("⏳ Generating blog... Please wait.")
 
         # Run pipeline
-        final_blog, graph_image = run_pipeline(video_url, model_name,)
+        # final_blog, graph_image = run_pipeline(video_url, model_name)
+        final_blog  = run_pipeline(video_url, model_name)
 
-        # Display the graph output
-        st.subheader("LangGraph Workflow:")
-        st.image(graph_image, caption="Graph Execution Flow", use_container_width=True)
+        # # Display the graph output
+        
+        # st.subheader("LangGraph Workflow:")
+        # st.image(graph_image, caption="Graph Execution Flow", use_container_width=True)
 
         # Display the blog output
         st.subheader("Generated Blog:")

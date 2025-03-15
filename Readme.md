@@ -1,8 +1,8 @@
 
 # 🎥 YouTube Blog Generator  
-![GitHub Repo Stars](https://img.shields.io/github/stars/your-username/youtube-blog-generator?style=social)  
-![GitHub forks](https://img.shields.io/github/forks/your-username/youtube-blog-generator?style=social)  
-![GitHub license](https://img.shields.io/github/license/your-username/youtube-blog-generator)  
+![GitHub Repo Stars](https://img.shields.io/github/stars//ShivaniParekh/youtube-blog-generator?style=social)  
+![GitHub forks](https://img.shields.io/github/forks//ShivaniParekh/youtube-blog-generator?style=social)  
+![GitHub license](https://img.shields.io/github/license//ShivaniParekh/youtube-blog-generator)  
 
 ## 📌 Overview  
 The **YouTube Blog Generator** is an AI-powered tool that converts YouTube videos into well-structured blog posts. It extracts key insights from a video's transcript and formats them into an SEO-friendly article.  
@@ -28,14 +28,14 @@ git clone https://github.com/your-username/youtube-blog-generator.git
 
 
 
-### **2️⃣ Navigate to the project directory
+### **2️⃣ Navigate to the project directory**
 
 ```
 cd youtube-blog-generator
 ```
 
 
-### **3️⃣ Install Dependencies
+### **3️⃣ Install Dependencies**
 
 ```
 pip install -r requirements.txt
