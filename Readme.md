@@ -1,14 +1,14 @@
 
 # 🎥 YouTube Blog Generator  
-![GitHub Repo Stars](https://img.shields.io/github/stars//ShivaniParekh/youtube-blog-generator?style=social)  
-![GitHub forks](https://img.shields.io/github/forks//ShivaniParekh/youtube-blog-generator?style=social)  
-![GitHub license](https://img.shields.io/github/license//ShivaniParekh/youtube-blog-generator)  
+![GitHub Repo stars](https://img.shields.io/github/stars/ShivaniParekh/1-BlogGenerator)
+![GitHub forks](https://img.shields.io/github/forks/ShivaniParekh/1-BlogGenerator)  
+![GitHub license](https://img.shields.io/github/license/ShivaniParekh/1-BlogGenerator)  
 
 ## 📌 Overview  
 The **YouTube Blog Generator** is an AI-powered tool that converts YouTube videos into well-structured blog posts. It extracts key insights from a video's transcript and formats them into an SEO-friendly article.  
 
 ## 🎥 Live Demo  
-🚀 Try the online version here: **[YouTube Blog Generator Live](https://your-demo-link.com)**  
+🚀 Try the online version here: **[YouTube Blog Generator Live](https://shivaniparekh-1-bloggenerator-app-khyrmn.streamlit.app/)**  
 
 ## 🚀 Features  
 ✅ **AI-powered blog generation** from YouTube transcripts  
