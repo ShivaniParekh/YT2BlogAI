@@ -4,3 +4,4 @@ youtube_transcript_api
 langgraph
 streamlit
 IPython
+nltk
