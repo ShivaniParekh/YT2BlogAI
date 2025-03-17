@@ -8,7 +8,7 @@
 The **YouTube Blog Generator** is an AI-powered tool that converts YouTube videos into well-structured blog posts. It extracts key insights from a video's transcript and formats them into an SEO-friendly article.  
 
 ## 🎥 Live Demo  
-🚀 Try the online version here: **[YouTube Blog Generator Live](https://shivaniparekh-1-bloggenerator-app-khyrmn.streamlit.app/)**  
+🚀 Try the online version here: **[YouTube Blog Generator Live](https://shivaniparekh-yt2blogai.streamlit.app/)**  
 
 ## 🚀 Features  
 ✅ **AI-powered blog generation** from YouTube transcripts  
@@ -26,8 +26,6 @@ git clone https://github.com/your-username/youtube-blog-generator.git
 ```
 
 
-
-
 ### **2️⃣ Navigate to the project directory**
 
 ```
@@ -40,3 +38,41 @@ cd youtube-blog-generator
 ```
 pip install -r requirements.txt
 ``` 
+
+### **4️⃣ Set up environment variables: Create a .env file in the root directory of the project. Add your GitHub Personal Access Token to this file by adding the following line (replace your_token_here with your actual groq api token):***
+
+```
+GROQ_API_KEY="your_token_here"
+```
+
+## Usage
+### **1️⃣ Run the app**
+
+```
+streamlit run app.py
+```
+
+2️⃣ Use the Streamlit interface to enter the youtube url you want to generate a Blog for.
+
+
+## Folder Structure
+YT2BlogAI/
+├── .gitignore
+├── LICENSE
+├── README.md
+├── app.py
+├── bloggenerator.ipynb
+├── bloggenerator.py
+└── requirements.txt
+
+## License
+This project is licensed under the MIT License. See the LICENSE file for details.
+
+## Contributing
+We welcome contributions to the YT2BlogAI project! To contribute, please:
+
+1️⃣Fork the repository.
+2️⃣Create a new branch for your changes.
+3️⃣Make your desired modifications.
+4️⃣Ensure your changes include tests and documentation as needed.
+5️⃣Open a pull request describing your changes and referencing related issues.
