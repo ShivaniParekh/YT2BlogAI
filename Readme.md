@@ -45,7 +45,7 @@ pip install -r requirements.txt
 GROQ_API_KEY="your_token_here"
 ```
 
-## Usage
+## 🚀 Usage
 ### **1️⃣ Run the app**
 
 ```
@@ -55,7 +55,7 @@ streamlit run app.py
 2️⃣ Use the Streamlit interface to enter the youtube url you want to generate a Blog for.
 
 
-## Folder Structure
+## 📂Folder Structure
 
 ```
 YT2BlogAI/
@@ -68,10 +68,10 @@ YT2BlogAI/
 └── requirements.txt
 ```
 
-## License
+## 📜License
 This project is licensed under the MIT License. See the LICENSE file for details.
 
-## Contributing
+## 🤝Contributing
 We welcome contributions to the **YT2BlogAI** project! To contribute, please:
 
 1️⃣**Fork** the repository.
