@@ -56,6 +56,8 @@ streamlit run app.py
 
 
 ## Folder Structure
+
+```
 YT2BlogAI/
 ├── .gitignore
 ├── LICENSE
@@ -64,15 +66,20 @@ YT2BlogAI/
 ├── bloggenerator.ipynb
 ├── bloggenerator.py
 └── requirements.txt
+```
 
 ## License
 This project is licensed under the MIT License. See the LICENSE file for details.
 
 ## Contributing
-We welcome contributions to the YT2BlogAI project! To contribute, please:
+We welcome contributions to the **YT2BlogAI** project! To contribute, please:
 
-1️⃣Fork the repository.
-2️⃣Create a new branch for your changes.
-3️⃣Make your desired modifications.
-4️⃣Ensure your changes include tests and documentation as needed.
-5️⃣Open a pull request describing your changes and referencing related issues.
+1️⃣**Fork** the repository.
+
+2️⃣**Create** a new branch for your changes.
+
+3️⃣**Make your desired modifications.**
+
+4️⃣**Ensure your changes** include tests and documentation as needed.
+
+5️⃣**Open a pull request** describing your changes and referencing related issues.
