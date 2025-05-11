@@ -5,6 +5,7 @@ load_dotenv()
 import streamlit as st
 from langchain_groq import ChatGroq
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import RequestBlocked
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -29,39 +30,54 @@ def extract_transcript(state: State) -> State:
     video_id=""
     if "youtube.com/watch?v=" in video_url:
         video_id = video_url.split("v=")[-1].split("&")[0]  # Extract ID
-        print
     elif "youtu.be/" in video_url:
         video_id = video_url.split("youtu.be/")[-1].split("?")[0]  # Extract ID
 
     if not video_id:
         raise ValueError("Invalid YouTube URL. Could not extract video ID.")
 
-    
-    # video_id = state["video_url"].split("v=")[-1].split("&")[0]
-    transcript = YouTubeTranscriptApi.get_transcript(video_id)
-    text_transcript = " ".join([t["text"] for t in transcript])
-    state["transcript"] = text_transcript
-    return state
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        text_transcript = " ".join([t["text"] for t in transcript])
+        state["transcript"] = text_transcript
+        return state
+    except RequestBlocked as e:
+        print(f"Error: YouTube blocked the transcript request for video ID '{video_id}'.")
+        print(f"Details: {e}") # Consider logging the full error from logs
+        return None # Or raise a custom exception
+    except Exception as e:
+        print(f"An unexpected error occurred while fetching the transcript for '{video_url}': {e}")
+        return None
+
 
 def chunk_text(text: str, max_tokens: int = 500):
     words = text.split()
     return [" ".join(words[i:i + max_tokens]) for i in range(0, len(words), max_tokens)]
 
 def generate_blog_section(chunk: str, llm) -> str:
+
     prompt_text = f"""
     You are a professional blog writer skilled in writing engaging, informative, and SEO-friendly articles.
-    Convert the following YouTube transcript chunk into a well-structured blog section:
+    Convert the following YouTube transcript chunk into a well-structured blog section:  
     {chunk}
+    Structure:
+    1. **Title**: A compelling blog title
+    2. **Introduction**: A brief introduction
+    3. **Headings & Subheadings**
+    4. **Conclusion**: A strong closing statement
     """
     return llm.invoke(prompt_text).content
 
 def generate_blog(state: State, llm) -> State:
+
     transcript_chunks = chunk_text(state["transcript"])
     blog_sections = [generate_blog_section(chunk, llm) for chunk in transcript_chunks]
     state["blog"] = "\n\n".join(blog_sections)
+
     return state
 
 def generate_graph(llm):
+
     builder = StateGraph(State)
     builder.add_node("extract_transcript", extract_transcript)
     builder.add_node("generate_blog", lambda state: generate_blog(state, llm))
@@ -97,14 +113,3 @@ def run_pipeline(video_url: str, model_name: str):
     print("✅ Pipeline Execution Complete.")
 
     return final_state["blog"]  # Return final blog & graph image #return final_state["blog"], graph_image , if you want graph_image displayed
-
-
-
-# run_pipeline("https://www.youtube.com/watch?v=UV81LAb3x2g")s
-
-
-
-
-
-
-    
