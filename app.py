@@ -9,6 +9,7 @@ from bloggenerator import run_pipeline
 # Download required NLTK data
 nltk.download('punkt')
 nltk.download('vader_lexicon')
+nltk.download('punkt_tab')
 
 # Streamlit Theme Configuration
 st.set_page_config(
