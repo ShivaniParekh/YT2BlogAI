@@ -5,3 +5,4 @@ langgraph
 streamlit
 IPython
 nltk
+langgraph-cli[inmem]

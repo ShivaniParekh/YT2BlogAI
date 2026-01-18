@@ -1,112 +1,115 @@
 import streamlit as st
 import time
-import random
 import nltk
 from nltk.tokenize import sent_tokenize
-from nltk.sentiment import SentimentIntensityAnalyzer
-from bloggenerator import run_pipeline
+from bloggenerator import generate_graph, initialize_model
 
-# Download required NLTK data
-nltk.download('punkt')
-nltk.download('vader_lexicon')
-nltk.download('punkt_tab')
+# Setup NLTK
+nltk.download('punkt', quiet=True)
 
-# Streamlit Theme Configuration
-st.set_page_config(
-    page_title="YouTube Blog Generator",
-    page_icon="📄",
-    layout="wide"
-)
+# 1. PAGE CONFIG & STYLING
+st.set_page_config(page_title="YouTube Blog Generator", page_icon="🎥", layout="wide")
 
-# Custom CSS for Styling
 st.markdown("""
     <style>
-        body { background-color: #f5f7fa; }
-        .stTitle { text-align: center; font-size: 2.5em; font-weight: bold; color: #3B82F6; }
-        .stTextInput > label { font-size: 1.2em; font-weight: bold; }
-        .stButton > button { font-size: 1.1em; background: linear-gradient(90deg, #3B82F6, #9333EA); color: white; border-radius: 8px; }
-        .stMetric { font-size: 1.3em; font-weight: bold; }
-        .stSidebar { background-color: #111827; color: white; padding: 20px; border-radius: 10px; }
-        .stSidebar select { font-size: 1.1em; }
-        .stExpander { background-color: #f8f9fa; border-radius: 10px; padding: 10px; }
-        .stMarkdown { font-size: 1.1em; line-height: 1.6; }
+        .stTitle { text-align: center; color: #3B82F6; font-weight: bold; }
+        .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; }
+        .main-container { background-color: #f8f9fa; padding: 20px; border-radius: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
-# Summary Function
-def summarize_text(blog_content):
-    """Generate a short summary using NLTK."""
-    sentences = sent_tokenize(blog_content)
-    return " ".join(sentences[:2])
+# 2. SESSION STATE INITIALIZATION
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(time.time())
+if "graph_state" not in st.session_state:
+    st.session_state.graph_state = None
+if "finalized" not in st.session_state:
+    st.session_state.finalized = False
 
-# Engagement Score Function
-def generate_engagement_score(blog_content):
-    """Rate blog engagement based on sentiment analysis using NLTK's Vader."""
-    sia = SentimentIntensityAnalyzer()
-    sentiment = sia.polarity_scores(blog_content)
-    score = int((sentiment["compound"] + 1) * 50)  # Convert to 0-100 scale
-    return score
+# 3. SIDEBAR & TOOLS
+with st.sidebar:
+    st.title("⚙️ Settings")
+    model_name = st.selectbox("Select AI Model", ["llama-3.1-8b-instant", "qwen/qwen3-32b"])
+    if st.button("🗑️ Reset Application"):
+        st.session_state.clear()
+        st.rerun()
 
-def main():
-    # Title & Subtitle
-    st.markdown("<h1 class='stTitle'>🎥 YouTube Blog Generator</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; font-size: 18px;'>Transform YouTube videos into structured, SEO-optimized blogs effortlessly.</p>", unsafe_allow_html=True)
+# Cache the graph so memory persists
+@st.cache_resource
+def load_graph(_model):
+    llm = initialize_model(_model)
+    return generate_graph(llm)
+
+graph = load_graph(model_name)
+config = {"configurable": {"thread_id": st.session_state.thread_id}}
+
+# 4. MAIN UI
+st.markdown("<h1 class='stTitle'>🎥 YouTube Blog Generator</h1>", unsafe_allow_html=True)
+
+# --- MODE A: FINALIZED VIEW ---
+if st.session_state.finalized:
+    current_state = graph.get_state(config).values
+    final_blog = current_state.get("blog")
+    
+    st.success("🎉 Finalized Blog Content")
+    st.markdown(final_blog)
+    
+    # Simple NLTK summary
+    sentences = sent_tokenize(final_blog)
+    summary = " ".join(sentences[:2])
+    with st.expander("📌 Quick Summary"):
+        st.write(summary)
+        
+    if st.button("➕ Create New Blog"):
+        st.session_state.clear()
+        st.rerun()
+
+# --- MODE B: DRAFTING / FEEDBACK VIEW ---
+elif st.session_state.graph_state:
+    current_state = st.session_state.graph_state.values
+    blog_draft = current_state.get("blog")
+
+    st.subheader("📝 Blog Draft")
+    st.info("Review the draft below and provide feedback if needed.")
+    st.markdown(blog_draft)
+    
     st.divider()
-
-    # Layout: Input fields with columns
-    col1, col2 = st.columns([3, 1])
-
-    # Video URL Input
+    
+    # Feedback Area
+    feedback = st.text_area("What would you like to improve?", placeholder="e.g. Add more bullet points, make it funnier...")
+    
+    col1, col2 = st.columns(2)
     with col1:
-        st.markdown("### 🔗 Enter YouTube Video URL")
-        video_url = st.text_input("Paste the YouTube video URL:", placeholder="https://www.youtube.com/watch?v=example")
+        if st.button("🔄 Refine Blog"):
+            if feedback:
+                graph.update_state(config, {"feedback": feedback})
+                with st.spinner("Updating blog..."):
+                    for event in graph.stream(None, config): pass
+                st.session_state.graph_state = graph.get_state(config)
+                st.rerun()
+            else:
+                st.warning("Please enter feedback text first.")
+                
+    with col2:
+        if st.button("✅ Looks Great! Finalize"):
+            graph.update_state(config, {"feedback": "Accepted"})
+            with st.spinner("Finalizing..."):
+                for event in graph.stream(None, config): pass
+            st.session_state.finalized = True
+            st.rerun()
 
-    # Sidebar for Model Selection
-    with st.sidebar:
-        st.markdown("## ⚙️ Settings")
-        model_name = st.selectbox("Select AI Model", ["qwen-2.5-32b", "gemma2-9b-it", "mixtral-8x7b-32768"])
-        st.markdown("---")
-        st.markdown("💡 *Tip: Choose a powerful model for better quality blogs.*")
-
-    # Generate Blog Button with Animated Progress Bar
-    if st.button("🚀 Generate Blog") and video_url:
-        st.markdown("⏳ **Processing...** Please wait while we generate your blog.")
-
-        progress_bar = st.progress(0)
-        progress_text = st.empty()
-
-        for percent in range(0, 101, 10):
-            time.sleep(0.2)  # Simulating processing time
-            progress_bar.progress(percent)
-            progress_text.text(f"Processing... {percent}%")
-
-        progress_bar.empty()
-        progress_text.empty()
-
-        final_blog = run_pipeline(video_url, model_name)  # Call main pipeline function
-
-        # Generate additional features
-        summary = summarize_text(final_blog)
-        engagement_score = generate_engagement_score(final_blog)
-
-        # Display Engagement Score
-        st.metric(label="📊 Engagement Score", value=f"{engagement_score}/100", delta=random.randint(-5, 5))
-
-        # TL;DR Summary
-        with st.expander("📌 **TL;DR (Summary)**", expanded=True):
-            st.markdown(f"**{summary}**")
-
-        # Full Generated Blog
-        with st.expander("📜 **Generated Blog** (Click to expand)", expanded=True):
-            st.markdown(final_blog, unsafe_allow_html=True)
-
-        # Download Button for Markdown File
-        st.download_button(
-            label="📥 Download as Markdown",
-            data=final_blog,
-            file_name="generated_blog.md",
-            mime="text/markdown"
-        )
-
-if __name__ == "__main__":
-    main()
+# --- MODE C: INITIAL INPUT VIEW ---
+else:
+    video_url = st.text_input("Paste YouTube URL here:", placeholder="https://www.youtube.com/watch?v=...")
+    
+    if st.button("🚀 Generate Blog Draft"):
+        if video_url:
+            initial_input = {"video_url": video_url, "transcript": "", "blog": "", "feedback": "", "final_blog": ""}
+            with st.spinner("Analyzing video and writing draft..."):
+                # Run graph until it hits the interrupt_before "human_feedback"
+                for event in graph.stream(initial_input, config):
+                    pass
+            st.session_state.graph_state = graph.get_state(config)
+            st.rerun()
+        else:
+            st.error("Please enter a valid URL.")
