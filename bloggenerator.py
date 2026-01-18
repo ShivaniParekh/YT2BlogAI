@@ -1,115 +1,220 @@
 import os
 from dotenv import load_dotenv
 load_dotenv()
-
-import streamlit as st
-from langchain_groq import ChatGroq
 from youtube_transcript_api import YouTubeTranscriptApi
+from IPython.display import Image, display
 from youtube_transcript_api import RequestBlocked
-from langgraph.graph import StateGraph, START, END
+from typing import TypedDict, Optional
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import MessagesState
+from langgraph.graph import START, StateGraph,END
+from langgraph.prebuilt import tools_condition, ToolNode
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from typing import TypedDict
-from IPython.display import Image
+from langchain_groq import ChatGroq
 
-def initialize_model(model_name: str):
-    os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
-    return ChatGroq(model=model_name)
+memory = MemorySaver()
+def initialize_model(model_name):
+
+    os.environ["GROQ_API_KEY"]=os.getenv("GROQ_API_KEY")
+    llm=ChatGroq(model=model_name,temperature=0.7)
+
+    return llm
+
 
 class State(TypedDict):
     video_url: str
     transcript: str
     blog: str
+    feedback:str
+    final_blog: str
 
 def extract_transcript(state: State) -> State:
+
+    """Extracts transcript from a YouTube video URL."""
+
     if "video_url" not in state:
         raise KeyError("Missing 'video_url' in state.")
-    
+
     video_url = state["video_url"].strip()
 
     video_id=""
     if "youtube.com/watch?v=" in video_url:
         video_id = video_url.split("v=")[-1].split("&")[0]  # Extract ID
+
     elif "youtu.be/" in video_url:
         video_id = video_url.split("youtu.be/")[-1].split("?")[0]  # Extract ID
 
     if not video_id:
         raise ValueError("Invalid YouTube URL. Could not extract video ID.")
+    
 
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        text_transcript = " ".join([t["text"] for t in transcript])
+        transcript_api = YouTubeTranscriptApi()
+        transcript= transcript_api.fetch(video_id=video_id)
+        text_transcript = " ".join(snippet.text for snippet in transcript)
         state["transcript"] = text_transcript
         return state
     except RequestBlocked as e:
-        print(f"Error: YouTube blocked the transcript request for video ID '{video_id}'.")
-        print(f"Details: {e}") # Consider logging the full error from logs
-        return None # Or raise a custom exception
+            print(f"Error: YouTube blocked the transcript request for video ID '{video_id}'.")
+            print(f"Details: {e}") # Consider logging the full error from logs
+            return None # Or raise a custom exception
     except Exception as e:
         print(f"An unexpected error occurred while fetching the transcript for '{video_url}': {e}")
         return None
 
-
 def chunk_text(text: str, max_tokens: int = 500):
-    words = text.split()
-    return [" ".join(words[i:i + max_tokens]) for i in range(0, len(words), max_tokens)]
 
-def generate_blog_section(chunk: str, llm) -> str:
+    """Splits text into chunks of max_tokens words."""
+
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), max_tokens):
+        chunks.append(" ".join(words[i:i + max_tokens]))
+    return chunks
+
+def generate_blog_section(chunk: str,llm) -> str:
+
+    """Generates a blog section for a given transcript chunk."""
+
+    # prompt_text = f"""
+    # Generate a structured blog based on the following YouTube transcript chunk:
+    # {chunk}
+
+    # Structure:
+    # 1. **Title**: A compelling blog title in only 10 words.
+    # 2. **Introduction**: A brief introduction in only 40 words.
+    # 3. **Headings & Subheadings** 
+    # 4. **Conclusion**: A strong closing statement in only 40 words.
+    
+    # Keep the response concise, and do not exceed 3000 tokens.
+    # """
 
     prompt_text = f"""
-    You are a professional blog writer skilled in writing engaging, informative, and SEO-friendly articles.
-    Convert the following YouTube transcript chunk into a well-structured blog section:  
-    {chunk}
-    Structure:
-    1. **Title**: A compelling blog title
-    2. **Introduction**: A brief introduction
-    3. **Headings & Subheadings**
-    4. **Conclusion**: A strong closing statement
+        Extract the key technical or narrative points from this transcript chunk 
+        and format them as detailed blog headings and paragraphs:
+        {chunk}
+        
+        Do not include a Title or Introduction yet. Focus only on the facts in this chunk.
     """
-    return llm.invoke(prompt_text).content
+    return llm.invoke(prompt_text).content  # Invoke LLM for each chunk
 
-def generate_blog(state: State, llm) -> State:
+def generate_blog(state: State,llm) -> State:
 
-    transcript_chunks = chunk_text(state["transcript"])
-    blog_sections = [generate_blog_section(chunk, llm) for chunk in transcript_chunks]
-    state["blog"] = "\n\n".join(blog_sections)
+    """Generates a full blog by processing transcript chunks separately."""
+    
+    transcript_chunks = chunk_text(state["transcript"])  # Split transcript
+    # 1. Get the body content from all chunks
+    blog_sections = [generate_blog_section(chunk,llm) for chunk in transcript_chunks]  # Process chunks
+    # state["blog"] = "\n\n".join(blog_sections)  # Combine sections
 
+
+    combined_body = "\n\n".join(blog_sections)
+
+    # 2. Make ONE final call to wrap it in a blog structure
+    final_polish_prompt = f"""
+        You are a professional blog editor. Take the following sections and 
+        turn them into one cohesive blog post with ONE compelling title, 
+        ONE introduction, well-organized subheadings, and ONE conclusion.
+        
+        Content:
+        {combined_body}
+    """
+    state["blog"] = llm.invoke(final_polish_prompt).content
     return state
 
-def generate_graph(llm):
+def human_feedback(state: State) -> dict:
+    # print("\n-------------------------------------------✅ Blog Draft ------------------------------------ \n", state["blog"])
+    # print("\n-------------------------------------------✅ End of the Blog------------------------------------ \n")
+    # choice = input("\nDo you want to provide feedback to refine the blog? (yes/no/accepted): ").strip().lower()
+    
+    # if choice == "yes":
+    #     state["feedback"] = input("\nEnter your feedback to refine the blog: ")
+    #     return {"feedback": state["feedback"], "refine_blog": state["blog"]}
+    # elif choice == "accepted":
+    #     state["feedback"] = "Accepted"
+    #     print("\n------------------------------------ Blog Accepted ----------------------------------------------\n")
+    #     return {"feedback": state["feedback"],"final_blog": state["blog"]}  # Ends workflow
+    # else:
+    #     state["feedback"] = "No feedback provided."
+    #     print("\n------------------------------------ No feedback provided.---------------------------------------------- \n")
+    #     return {"feedback": state["feedback"],"final_blog": state["blog"]}  # Ends workflow
+    return state
 
+
+def refine_blog(state: State, llm) -> dict:
+    
+    feedback = state.get("feedback", "No human feedback provided.")
+    
+    prompt = f"Revise the blog considering following feedback provided from user : {feedback} \n\n Blog Content: {state['blog']}"
+    print("\n\n\n 🖍🖍 Refining blog as per the following feedback : ",feedback)
+    # Call LLM to refine the blog
+    final_blog = llm.invoke(prompt).content
+    state["final_blog"] = final_blog
+
+    print("\n✅ Blog Finalized Successfully!\n")
+    
+    return {
+        "blog": final_blog,    # Update the blog with the refined version
+        "final_blog": final_blog  # Store the final blog version
+    }
+
+# Conditional edges for feedback loop
+def route_after_feedback(state):
+    if state["feedback"] == "Accepted" or state["feedback"] == "No feedback provided.":
+        return END  # ✅ Ends workflow if feedback is accepted or no feedback is given
+    return "refine_blog"  # ✅ Loops back to refining
+
+
+def generate_graph(llm):
     builder = StateGraph(State)
+       
     builder.add_node("extract_transcript", extract_transcript)
     builder.add_node("generate_blog", lambda state: generate_blog(state, llm))
+    builder.add_node("human_feedback", human_feedback)
+    builder.add_node("refine_blog", lambda state: refine_blog(state, llm)) 
 
     builder.add_edge(START, "extract_transcript")
     builder.add_edge("extract_transcript", "generate_blog")
-    builder.add_edge("generate_blog", END)
+    builder.add_edge("generate_blog", "human_feedback")
 
-    graph = builder.compile()  # Compile the LangGraph object
-    # graph_image = None
-
-    #Uncomment this if you want to generate image
-    # try:
-    #     graph_image = graph.get_graph().draw_mermaid_png()  # Generate image (if possible)
-    # except Exception as e:
-    #     print(f"Warning: Could not generate graph image. Error: {e}")
-
-    return graph    # graph, graph_image - Uncomment this if you want to generate image
+    # ✅ Loop back to get more feedback if needed
+    builder.add_edge("refine_blog", "human_feedback")  
 
 
-
-def run_pipeline(video_url: str, model_name: str):
-    llm = initialize_model(model_name)
+    builder.add_conditional_edges("human_feedback", route_after_feedback, ["refine_blog", END])
 
 
-    # graph, graph_image = generate_graph(llm) #Uncomment this if you want to generate image
-    graph = generate_graph(llm)  # Get both
+    graph = builder.compile(checkpointer=memory, interrupt_before=["human_feedback"])
+    return graph
 
-    initial_state: State = {"video_url": video_url, "transcript": "", "blog": ""}
+
+def run_pipeline(video_url,model):
+    llm = initialize_model(model)
+    graph=generate_graph(llm)
+    print(graph)
+
+    # url="https://www.youtube.com/watch?v=bxuYDT-BWaI"
+
+    initial_state: State = {
+            "video_url": video_url,
+            "transcript": "",
+            "blog": "",
+            "feedback": "",  # No need to store permanently
+            "final_blog":""
+        }
+    # Thread
+
     print("✅ Graph Created. Invoking the pipeline...")
-
-    final_state = graph.invoke(initial_state)  # Now graph is correct
+    messages= graph.invoke(initial_state)
     print("✅ Pipeline Execution Complete.")
 
-    return final_state["blog"]  # Return final blog & graph image #return final_state["blog"], graph_image , if you want graph_image displayed
+    # Ensure the final blog is printed correctly
+    if "final_blog" in messages:
+        print("\n------------------------------------ ✅ Final Blog Output: ------------------------------------ \n", messages["final_blog"])
+        return messages["final_blog"]
+    else:
+        print("\n❌ Error: 'final_blog' key missing in output state.")
+     
+
+# blog = run_pipeline()
+# print("\n\n\nFinal Output:" , blog)

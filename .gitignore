@@ -1,3 +1,7 @@
 venv/
 .env
 __pycache__/
+.devcontainer
+.langraph_api
+.vscode
+chatgpt.txt
