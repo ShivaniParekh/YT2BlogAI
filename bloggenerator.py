@@ -1,53 +1,77 @@
 import os
-from dotenv import load_dotenv
-load_dotenv()
-from youtube_transcript_api import YouTubeTranscriptApi
-from IPython.display import Image, display
-from youtube_transcript_api import RequestBlocked
-from typing import TypedDict, Optional
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import MessagesState
-from langgraph.graph import START, StateGraph,END
-from langgraph.prebuilt import tools_condition, ToolNode
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
-import nltk
 import heapq
+import logging
+from typing import TypedDict, List
+
+import nltk
+from dotenv import load_dotenv
 from nltk.corpus import stopwords
-from nltk.tokenize import sent_tokenize,word_tokenize
-import logging
+from nltk.tokenize import sent_tokenize, word_tokenize
+from youtube_transcript_api import YouTubeTranscriptApi, RequestBlocked
+
+from langchain_groq import ChatGroq
 from langchain_core.runnables import RunnableConfig
-import logging
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, StateGraph, END
 
+# Load environment variables
+load_dotenv()
 
-
-
-
-
+# Logging Configuration
 logger = logging.getLogger("blog_gen")
-# Setup NLTK
-resources = [
-    ('corpora/stopwords', 'stopwords'),
-    ('tokenizers/punkt', 'punkt'),
-    ('tokenizers/punkt_tab', 'punkt_tab')
-]
 
-for path, name in resources:
-    try:
-        nltk.data.find(path)
-    except LookupError:
-        nltk.download(name, quiet=True)
+def setup_nltk():
+    """Download required NLTK resources if not already present."""
+    resources = [
+        ('corpora/stopwords', 'stopwords'),
+        ('tokenizers/punkt', 'punkt'),
+        ('tokenizers/punkt_tab', 'punkt_tab')
+    ]
+    for path, name in resources:
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            nltk.download(name, quiet=True)
 
-
-
+setup_nltk()
 memory = MemorySaver()
-def initialize_model(model_name):
 
-    os.environ["GROQ_API_KEY"]=os.getenv("GROQ_API_KEY")
-    llm=ChatGroq(model=model_name,temperature=0.7)
+class State(TypedDict):
+    """Represents the state of the blog generation graph."""
+    video_url: str
+    transcript: str
+    blog: str
+    feedback: str
+    final_blog: str
+    tone: str
+    seo_meta: str
 
-    return llm
+
+def initialize_model(model_name:str):
+    """
+    Initializes the ChatGroq model.
+    
+    Args:
+        model_name (str): The name of the Groq model to use.
+    Returns:
+        ChatGroq: An instance of the LLM.
+    """
+    logger.info("Initialize model")
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY not found in environment variables.")
+    logger.info("Model initialized")
+    return ChatGroq(model=model_name, temperature=0.7, groq_api_key=api_key)
+
 def nltk_summarizer(text, num_sentences=3):
+    """
+    Generates a frequency-based summary of the text using NLTK.
+    
+    Args:
+        text (str): The input text to summarize.
+        num_sentences (int): Number of sentences for the summary.
+    """
+    logger.info(" Generating Summary ")
     if not text:
         return ""
     
@@ -77,16 +101,10 @@ def nltk_summarizer(text, num_sentences=3):
                     
     # 5. Pick the Top N Sentences
     summary_sentences = heapq.nlargest(num_sentences, sentence_scores, key=sentence_scores.get)
+    logger.info(" Summary Generated ")
     return " ".join(summary_sentences)
 
-class State(TypedDict):
-    video_url: str
-    transcript: str
-    blog: str
-    feedback:str
-    final_blog: str
-    tone: str           # New: Store the selected tone
-    seo_meta: str       # New: Store SEO description/keywords
+
 
 def extract_transcript(state: State,config: RunnableConfig) -> State:
 
@@ -100,8 +118,8 @@ def extract_transcript(state: State,config: RunnableConfig) -> State:
         raise KeyError("Missing 'video_url' in state.")
 
     video_url = state["video_url"].strip()
-
     video_id=""
+
     if "youtube.com/watch?v=" in video_url:
         video_id = video_url.split("v=")[-1].split("&")[0]  # Extract ID
 
@@ -126,9 +144,9 @@ def extract_transcript(state: State,config: RunnableConfig) -> State:
         print(f"An unexpected error occurred while fetching the transcript for '{video_url}': {e}")
         return None
 
-def chunk_text(text: str, max_tokens: int = 500):
+def chunk_text(text: str, max_tokens: int = 500)-> List[str]:
 
-    """Splits text into chunks of max_tokens words."""
+    """Splits text into chunks by word count."""
 
     words = text.split()
     chunks = []
@@ -136,171 +154,107 @@ def chunk_text(text: str, max_tokens: int = 500):
         chunks.append(" ".join(words[i:i + max_tokens]))
     return chunks
 
-def generate_blog_section(chunk: str,llm) -> str:
-
-    """Generates a blog section for a given transcript chunk."""
-
-    # prompt_text = f"""
-    # Generate a structured blog based on the following YouTube transcript chunk:
-    # {chunk}
-
-    # Structure:
-    # 1. **Title**: A compelling blog title in only 10 words.
-    # 2. **Introduction**: A brief introduction in only 40 words.
-    # 3. **Headings & Subheadings** 
-    # 4. **Conclusion**: A strong closing statement in only 40 words.
-    
-    # Keep the response concise, and do not exceed 3000 tokens.
-    # """
-
-    prompt_text = f"""
-        Extract the key technical or narrative points from this transcript chunk 
-        and format them as detailed blog headings and paragraphs:
-        {chunk}
-        
-        Do not include a Title or Introduction yet. Focus only on the facts in this chunk.
-    """
-    return llm.invoke(prompt_text).content  # Invoke LLM for each chunk
 
 def generate_blog(state: State,llm,config: RunnableConfig) -> State:
 
-    """Generates a full blog by processing transcript chunks separately."""
-
+    """Generates a structured blog post from transcript chunks."""
     session_id = config.get("configurable", {}).get("session_id", "UNKNOWN")
+    tone = state.get("tone", "Professional")
     
     logger.info(f"USER_ID: {session_id} | NODE: generate_blog | TONE: {state.get('tone')}")
     logger.info("🤖 AI is drafting the blog content...")
+    chunks = chunk_text(state["transcript"])
+    blog_sections = []
 
+    for chunk in chunks:
+        prompt = f"""Extract the key technical or narrative points from this transcript chunk 
+        and format them as detailed blog headings and paragraphs:
+        {chunk}
+        
+        Do not include a Title or Introduction yet. Focus only on the facts in this chunk."""
 
-    transcript_chunks = chunk_text(state["transcript"])  # Split transcript
-    # 1. Get the body content from all chunks
-    blog_sections = [generate_blog_section(chunk,llm) for chunk in transcript_chunks]  # Process chunks
-    # state["blog"] = "\n\n".join(blog_sections)  # Combine sections
+        section = llm.invoke(prompt).content
+        blog_sections.append(section)
+
     combined_body = "\n\n".join(blog_sections)
 
     # 2. Make ONE final call to wrap it in a blog structure
     tone = state.get("tone", "Professional")
     final_polish_prompt = f"""
-    You are a professional blog editor. 
-    
-    TASK: Convert the following content into a cohesive blog post using a {tone} tone.
-    
-    STRICT DATA FORMAT:
-    The response MUST be divided into two sections by the exact string '|||SEO_SECTION|||'.
-    
-    SECTION 1: THE BLOG
-    - ONE Title (No 'Title:' prefix)
-    - ONE Introduction (No Meta Description or Keywords here!)
-    - Well-organized subheadings
-    - ONE Conclusion
-    
-    SECTION 2: SEO DATA (Place this ONLY after the separator)
-    - Meta Description: [160 chars]
-    - Keywords: [5 keywords]
+        You are a professional blog editor. 
+        
+        TASK: Convert the following content into a cohesive blog post using a {tone} tone.
+        
+        STRICT DATA FORMAT:
+        The response MUST be divided into two sections by the exact string '|||SEO_SECTION|||'.
+        
+        SECTION 1: THE BLOG
+        - ONE Title (No 'Title:' prefix)
+        - ONE Introduction (No Meta Description or Keywords here!)
+        - Well-organized subheadings
+        - ONE Conclusion
+        
+        SECTION 2: SEO DATA (Place this ONLY after the separator)
+        - Meta Description: [160 chars]
+        - Keywords: [5 keywords]
 
-    CONTENT:
-    {combined_body}
+        CONTENT:
+        {combined_body}
 
-    Double check: Ensure the string '|||SEO_SECTION|||' is placed between the Conclusion and the SEO data.
-"""
+        Double check: Ensure the string '|||SEO_SECTION|||' is placed between the Conclusion and the SEO data.
+        """
     
     state["blog"] = llm.invoke(final_polish_prompt).content
     logger.info("✍️ Draft generation complete.")
     return state
 
-def human_feedback(state: State) -> dict:
-    # print("\n-------------------------------------------✅ Blog Draft ------------------------------------ \n", state["blog"])
-    # print("\n-------------------------------------------✅ End of the Blog------------------------------------ \n")
-    # choice = input("\nDo you want to provide feedback to refine the blog? (yes/no/accepted): ").strip().lower()
-    
-    # if choice == "yes":
-    #     state["feedback"] = input("\nEnter your feedback to refine the blog: ")
-    #     return {"feedback": state["feedback"], "refine_blog": state["blog"]}
-    # elif choice == "accepted":
-    #     state["feedback"] = "Accepted"
-    #     print("\n------------------------------------ Blog Accepted ----------------------------------------------\n")
-    #     return {"feedback": state["feedback"],"final_blog": state["blog"]}  # Ends workflow
-    # else:
-    #     state["feedback"] = "No feedback provided."
-    #     print("\n------------------------------------ No feedback provided.---------------------------------------------- \n")
-    #     return {"feedback": state["feedback"],"final_blog": state["blog"]}  # Ends workflow
-    return state
+# def human_feedback(state: State) -> dict:
+#     return state
 
+
+# def refine_blog(state: State, llm) -> dict:
+    
+#     feedback = state.get("feedback", "No human feedback provided.")
+    
+#     prompt = f"Revise the blog considering following feedback provided from user : {feedback} \n\n Blog Content: {state['blog']}"
+#     # Call LLM to refine the blog
+#     final_blog = llm.invoke(prompt).content
+#     state["final_blog"] = final_blog
+#     return {
+#         "blog": final_blog,    # Update the blog with the refined version
+#         "final_blog": final_blog  # Store the final blog version
+#     }
 
 def refine_blog(state: State, llm) -> dict:
-    
-    feedback = state.get("feedback", "No human feedback provided.")
-    
-    prompt = f"Revise the blog considering following feedback provided from user : {feedback} \n\n Blog Content: {state['blog']}"
-    print("\n\n\n 🖍🖍 Refining blog as per the following feedback : ",feedback)
-    # Call LLM to refine the blog
-    final_blog = llm.invoke(prompt).content
-    state["final_blog"] = final_blog
+    """Refines the existing blog based on user feedback."""
+    feedback = state.get("feedback", "")
+    prompt = f"Revise this blog based on feedback: {feedback}\n\nOriginal Content: {state['blog']}"
+    refined_content = llm.invoke(prompt).content
+    return {"blog": refined_content, "final_blog": refined_content}
 
-    print("\n✅ Blog Finalized Successfully!\n")
-    
-    return {
-        "blog": final_blog,    # Update the blog with the refined version
-        "final_blog": final_blog  # Store the final blog version
-    }
 
-# Conditional edges for feedback loop
-def route_after_feedback(state):
-    if state["feedback"] == "Accepted" or state["feedback"] == "No feedback provided.":
-        return END  # ✅ Ends workflow if feedback is accepted or no feedback is given
-    return "refine_blog"  # ✅ Loops back to refining
-
+def route_after_feedback(state: State):
+    """Determines whether to end or refine based on feedback status."""
+    if state.get("feedback") in ["Accepted", "No feedback provided.", ""]:
+        return END
+    return "refine_blog"
 
 def generate_graph(llm):
+    """Compiles the state graph for the blog generation workflow."""
     builder = StateGraph(State)
        
     builder.add_node("extract_transcript", extract_transcript)
     builder.add_node("generate_blog", lambda state, config: generate_blog(state, llm, config))
-    builder.add_node("human_feedback", human_feedback)
+    builder.add_node("human_feedback", lambda state: state)
     builder.add_node("refine_blog", lambda state: refine_blog(state, llm)) 
 
     builder.add_edge(START, "extract_transcript")
     builder.add_edge("extract_transcript", "generate_blog")
     builder.add_edge("generate_blog", "human_feedback")
-
     # ✅ Loop back to get more feedback if needed
     builder.add_edge("refine_blog", "human_feedback")  
-
-
     builder.add_conditional_edges("human_feedback", route_after_feedback, ["refine_blog", END])
-
 
     graph = builder.compile(checkpointer=memory, interrupt_before=["human_feedback"])
     return graph
 
-
-def run_pipeline(video_url,model):
-    llm = initialize_model(model)
-    graph=generate_graph(llm)
-    print(graph)
-
-    # url="https://www.youtube.com/watch?v=bxuYDT-BWaI"
-
-    initial_state: State = {
-            "video_url": video_url,
-            "transcript": "",
-            "blog": "",
-            "feedback": "",  # No need to store permanently
-            "final_blog":""
-        }
-    # Thread
-
-    print("✅ Graph Created. Invoking the pipeline...")
-    messages= graph.invoke(initial_state)
-    print("✅ Pipeline Execution Complete.")
-
-    # Ensure the final blog is printed correctly
-    if "final_blog" in messages:
-        print("\n------------------------------------ ✅ Final Blog Output: ------------------------------------ \n", messages["final_blog"])
-        return messages["final_blog"]
-    else:
-        print("\n❌ Error: 'final_blog' key missing in output state.")
-     
-
-# blog = run_pipeline()
-# print("\n\n\nFinal Output:" , blog)
