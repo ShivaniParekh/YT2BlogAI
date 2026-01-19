@@ -15,7 +15,16 @@ import nltk
 import heapq
 from nltk.corpus import stopwords
 from nltk.tokenize import sent_tokenize,word_tokenize
+import logging
+from langchain_core.runnables import RunnableConfig
+import logging
 
+
+
+
+
+
+logger = logging.getLogger("blog_gen")
 # Setup NLTK
 resources = [
     ('corpora/stopwords', 'stopwords'),
@@ -79,9 +88,13 @@ class State(TypedDict):
     tone: str           # New: Store the selected tone
     seo_meta: str       # New: Store SEO description/keywords
 
-def extract_transcript(state: State) -> State:
+def extract_transcript(state: State,config: RunnableConfig) -> State:
 
     """Extracts transcript from a YouTube video URL."""
+ 
+    session_id = config.get("configurable", {}).get("session_id", "UNKNOWN")
+    logger.info(f"USER_ID: {session_id} | NODE: extract_transcript | STATUS: Processing")  
+    logger.info("🎥 Fetching YouTube transcript...")
 
     if "video_url" not in state:
         raise KeyError("Missing 'video_url' in state.")
@@ -97,13 +110,13 @@ def extract_transcript(state: State) -> State:
 
     if not video_id:
         raise ValueError("Invalid YouTube URL. Could not extract video ID.")
-    
 
     try:
         transcript_api = YouTubeTranscriptApi()
         transcript= transcript_api.fetch(video_id=video_id)
         text_transcript = " ".join(snippet.text for snippet in transcript)
         state["transcript"] = text_transcript
+        logger.info("✅ Transcript successfully extracted.")
         return state
     except RequestBlocked as e:
             print(f"Error: YouTube blocked the transcript request for video ID '{video_id}'.")
@@ -149,10 +162,16 @@ def generate_blog_section(chunk: str,llm) -> str:
     """
     return llm.invoke(prompt_text).content  # Invoke LLM for each chunk
 
-def generate_blog(state: State,llm) -> State:
+def generate_blog(state: State,llm,config: RunnableConfig) -> State:
 
     """Generates a full blog by processing transcript chunks separately."""
+
+    session_id = config.get("configurable", {}).get("session_id", "UNKNOWN")
     
+    logger.info(f"USER_ID: {session_id} | NODE: generate_blog | TONE: {state.get('tone')}")
+    logger.info("🤖 AI is drafting the blog content...")
+
+
     transcript_chunks = chunk_text(state["transcript"])  # Split transcript
     # 1. Get the body content from all chunks
     blog_sections = [generate_blog_section(chunk,llm) for chunk in transcript_chunks]  # Process chunks
@@ -186,6 +205,7 @@ def generate_blog(state: State,llm) -> State:
 """
     
     state["blog"] = llm.invoke(final_polish_prompt).content
+    logger.info("✍️ Draft generation complete.")
     return state
 
 def human_feedback(state: State) -> dict:
@@ -235,7 +255,7 @@ def generate_graph(llm):
     builder = StateGraph(State)
        
     builder.add_node("extract_transcript", extract_transcript)
-    builder.add_node("generate_blog", lambda state: generate_blog(state, llm))
+    builder.add_node("generate_blog", lambda state, config: generate_blog(state, llm, config))
     builder.add_node("human_feedback", human_feedback)
     builder.add_node("refine_blog", lambda state: refine_blog(state, llm)) 
 
