@@ -11,6 +11,25 @@ from langgraph.graph import START, StateGraph,END
 from langgraph.prebuilt import tools_condition, ToolNode
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
+import nltk
+import heapq
+from nltk.corpus import stopwords
+from nltk.tokenize import sent_tokenize,word_tokenize
+
+# Setup NLTK
+resources = [
+    ('corpora/stopwords', 'stopwords'),
+    ('tokenizers/punkt', 'punkt'),
+    ('tokenizers/punkt_tab', 'punkt_tab')
+]
+
+for path, name in resources:
+    try:
+        nltk.data.find(path)
+    except LookupError:
+        nltk.download(name, quiet=True)
+
+
 
 memory = MemorySaver()
 def initialize_model(model_name):
@@ -19,7 +38,37 @@ def initialize_model(model_name):
     llm=ChatGroq(model=model_name,temperature=0.7)
 
     return llm
-
+def nltk_summarizer(text, num_sentences=3):
+    if not text:
+        return ""
+    
+    # 1. Tokenize and Remove Stopwords
+    stop_words = set(stopwords.words('english'))
+    words = word_tokenize(text.lower())
+    
+    # 2. Calculate Word Frequencies
+    word_frequencies = {}
+    for word in words:
+        if word not in stop_words and word.isalnum():
+            word_frequencies[word] = word_frequencies.get(word, 0) + 1
+            
+    # 3. Normalize Frequencies
+    max_frequency = max(word_frequencies.values())
+    for word in word_frequencies.keys():
+        word_frequencies[word] = (word_frequencies[word] / max_frequency)
+        
+    # 4. Score Sentences based on Word Frequency
+    sentence_list = sent_tokenize(text)
+    sentence_scores = {}
+    for sent in sentence_list:
+        for word in word_tokenize(sent.lower()):
+            if word in word_frequencies:
+                if len(sent.split(' ')) < 30:  # Avoid overly long sentences
+                    sentence_scores[sent] = sentence_scores.get(sent, 0) + word_frequencies[word]
+                    
+    # 5. Pick the Top N Sentences
+    summary_sentences = heapq.nlargest(num_sentences, sentence_scores, key=sentence_scores.get)
+    return " ".join(summary_sentences)
 
 class State(TypedDict):
     video_url: str
@@ -27,6 +76,8 @@ class State(TypedDict):
     blog: str
     feedback:str
     final_blog: str
+    tone: str           # New: Store the selected tone
+    seo_meta: str       # New: Store SEO description/keywords
 
 def extract_transcript(state: State) -> State:
 
@@ -106,19 +157,34 @@ def generate_blog(state: State,llm) -> State:
     # 1. Get the body content from all chunks
     blog_sections = [generate_blog_section(chunk,llm) for chunk in transcript_chunks]  # Process chunks
     # state["blog"] = "\n\n".join(blog_sections)  # Combine sections
-
-
     combined_body = "\n\n".join(blog_sections)
 
     # 2. Make ONE final call to wrap it in a blog structure
+    tone = state.get("tone", "Professional")
     final_polish_prompt = f"""
-        You are a professional blog editor. Take the following sections and 
-        turn them into one cohesive blog post with ONE compelling title, 
-        ONE introduction, well-organized subheadings, and ONE conclusion.
-        
-        Content:
-        {combined_body}
-    """
+    You are a professional blog editor. 
+    
+    TASK: Convert the following content into a cohesive blog post using a {tone} tone.
+    
+    STRICT DATA FORMAT:
+    The response MUST be divided into two sections by the exact string '|||SEO_SECTION|||'.
+    
+    SECTION 1: THE BLOG
+    - ONE Title (No 'Title:' prefix)
+    - ONE Introduction (No Meta Description or Keywords here!)
+    - Well-organized subheadings
+    - ONE Conclusion
+    
+    SECTION 2: SEO DATA (Place this ONLY after the separator)
+    - Meta Description: [160 chars]
+    - Keywords: [5 keywords]
+
+    CONTENT:
+    {combined_body}
+
+    Double check: Ensure the string '|||SEO_SECTION|||' is placed between the Conclusion and the SEO data.
+"""
+    
     state["blog"] = llm.invoke(final_polish_prompt).content
     return state
 

@@ -1,22 +1,6 @@
 import streamlit as st
 import time
-import nltk
-from nltk.tokenize import sent_tokenize
-from bloggenerator import generate_graph, initialize_model
-
-# Setup NLTK
-
-
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt', quiet=True)
-
-try:
-    nltk.data.find('tokenizers/punkt_tab')
-except LookupError:
-    nltk.download('punkt_tab', quiet=True)
-
+from bloggenerator import generate_graph, initialize_model,nltk_summarizer
 
 
 # 1. PAGE CONFIG & STYLING
@@ -41,7 +25,9 @@ if "finalized" not in st.session_state:
 # 3. SIDEBAR & TOOLS
 with st.sidebar:
     st.title("⚙️ Settings")
-    model_name = st.selectbox("Select AI Model", ["llama-3.1-8b-instant", "qwen/qwen3-32b"])
+    model_name = st.selectbox("Select AI Model", ["llama-3.1-8b-instant", "llama-3.3-70b-versatile","qwen/qwen3-32b","groq/compound-mini","groq/compound","meta-llama/llama-4-scout-17b-16e-instruct","meta-llama/llama-prompt-guard-2-86m","whisper-large-v3-turbo","openai/gpt-oss-120b","moonshotai/kimi-k2-instruct-0905"])
+    # NEW: Tone Selection
+    blog_tone = st.selectbox("Select Tone", ["Professional", "Conversational", "Humorous", "Educational"])
     if st.button("🗑️ Reset Application"):
         st.session_state.clear()
         st.rerun()
@@ -61,21 +47,47 @@ st.markdown("<h1 class='stTitle'>🎥 YouTube Blog Generator</h1>", unsafe_allow
 # --- MODE A: FINALIZED VIEW ---
 if st.session_state.finalized:
     current_state = graph.get_state(config).values
-    final_blog = current_state.get("blog")
-    
-    st.success("🎉 Finalized Blog Content")
-    st.markdown(final_blog)
-    
-    # Simple NLTK summary
-    sentences = sent_tokenize(final_blog)
-    summary = " ".join(sentences[:2])
-    with st.expander("📌 Quick Summary"):
-        st.write(summary)
-        
-    if st.button("➕ Create New Blog"):
-        st.session_state.clear()
-        st.rerun()
+    full_content = current_state.get("blog")
 
+    # Split the content into Blog and SEO parts
+    if "|||SEO_SECTION|||" in full_content:
+        blog_part, seo_part = full_content.split("|||SEO_SECTION|||")
+    else:
+        blog_part, seo_part = full_content, "No SEO data generated."
+
+    # 1. Display the Blog
+    st.success("🎉 Finalized Blog Content")
+    st.markdown(blog_part)
+
+    # 2. Display the SEO Box
+    st.info(f"🔍 SEO Metadata\n\n{seo_part.strip()}")
+    st.divider()
+
+    # Use our new NLTK summarizer
+    smart_summary = nltk_summarizer(blog_part, num_sentences=3)    
+    # Display the NLTK summary in a nice callout box
+    with st.container():
+        st.markdown("#### 🤖 NLTK Smart Summary")
+        st.info(smart_summary)
+
+
+    col_a, col_b = st.columns(2)
+
+    # NEW: Download Button
+    with col_a:
+        st.download_button(
+            label="📥 Download Blog as Markdown",
+            data=full_content,
+            file_name="generated_blog.md",
+            mime="text/markdown"
+        )
+    with col_b:
+        if st.button("Create New Blog ➕"):
+            st.session_state.clear()
+            st.rerun()
+
+
+    
 # --- MODE B: DRAFTING / FEEDBACK VIEW ---
 elif st.session_state.graph_state:
     current_state = st.session_state.graph_state.values
@@ -116,7 +128,7 @@ else:
     
     if st.button("🚀 Generate Blog Draft"):
         if video_url:
-            initial_input = {"video_url": video_url, "transcript": "", "blog": "", "feedback": "", "final_blog": ""}
+            initial_input = {"video_url": video_url, "transcript": "", "blog": "", "feedback": "", "final_blog": "","tone": blog_tone}
             with st.spinner("Analyzing video and writing draft..."):
                 # Run graph until it hits the interrupt_before "human_feedback"
                 for event in graph.stream(initial_input, config):
