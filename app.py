@@ -5,7 +5,19 @@ from nltk.tokenize import sent_tokenize
 from bloggenerator import generate_graph, initialize_model
 
 # Setup NLTK
-nltk.download('punkt', quiet=True)
+
+
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt_tab', quiet=True)
+
+
 
 # 1. PAGE CONFIG & STYLING
 st.set_page_config(page_title="YouTube Blog Generator", page_icon="🎥", layout="wide")
