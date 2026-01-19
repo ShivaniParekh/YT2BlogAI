@@ -1,7 +1,50 @@
 import streamlit as st
 import time
 from bloggenerator import generate_graph, initialize_model,nltk_summarizer
+import sys
+import logging
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+# # Custom Handler to redirect logs to Streamlit
+# class StreamlitLogHandler(logging.Handler):
+#     def __init__(self, placeholder):
+#         super().__init__()
+#         self.placeholder = placeholder
+
+
+#     def emit(self, record):
+#         msg = self.format(record)
+#         # Append the new log to the session state list
+#         if "log_history" not in st.session_state:
+#             st.session_state.log_history = []
+        
+#         st.session_state.log_history.append(msg)
+        
+#         # Display the entire history in the placeholder
+#         self.placeholder.code("\n".join(st.session_state.log_history))
+# Setup Logger
+
+
+SUPPORTED_MODELS= [
+    "llama-3.1-8b-instant", "llama-3.3-70b-versatile","qwen/qwen3-32b","groq/compound-mini",
+    "groq/compound","meta-llama/llama-4-scout-17b-16e-instruct","meta-llama/llama-prompt-guard-2-86m",
+    "whisper-large-v3-turbo","openai/gpt-oss-120b","moonshotai/kimi-k2-instruct-0905"]
+
+# Logging Setup
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("blog_gen")
+logger.setLevel(logging.INFO)
+
+def get_session_id():
+    """Returns the unique session ID for the current user."""
+    ctx = get_script_run_ctx()
+    if ctx:
+        return ctx.session_id
+    return "UNKNOWN_SESSION"
 
 # 1. PAGE CONFIG & STYLING
 st.set_page_config(page_title="YouTube Blog Generator", page_icon="🎥", layout="wide")
@@ -24,21 +67,39 @@ if "finalized" not in st.session_state:
 
 # 3. SIDEBAR & TOOLS
 with st.sidebar:
+
     st.title("⚙️ Settings")
-    model_name = st.selectbox("Select AI Model", ["llama-3.1-8b-instant", "llama-3.3-70b-versatile","qwen/qwen3-32b","groq/compound-mini","groq/compound","meta-llama/llama-4-scout-17b-16e-instruct","meta-llama/llama-prompt-guard-2-86m","whisper-large-v3-turbo","openai/gpt-oss-120b","moonshotai/kimi-k2-instruct-0905"])
+    model_name = st.selectbox("Select AI Model",SUPPORTED_MODELS )
     # NEW: Tone Selection
     blog_tone = st.selectbox("Select Tone", ["Professional", "Conversational", "Humorous", "Educational"])
     if st.button("🗑️ Reset Application"):
         st.session_state.clear()
         st.rerun()
+    
+    
+    # st.subheader("⚙️ System Logs")
+    # log_placeholder = st.empty() # Placeholder for logs
+    # # Always show existing logs from session state on every rerun
+    # if st.session_state.log_history:
+    #     log_placeholder.code("\n".join(st.session_state.log_history))
+
+    # # Attach the handler to the logger
+    # if not logger.handlers:
+    #     handler = StreamlitLogHandler(log_placeholder)
+    #     handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', '%H:%M:%S'))
+    #     logger.addHandler(handler)
+    # else:
+    #     # Re-link the current placeholder to the existing handler
+    #     logger.handlers[0].placeholder = log_placeholder
 
 # Cache the graph so memory persists
 @st.cache_resource
-def load_graph(_model):
+def load_graph_cached(_model):
+    """Caches the graph and model initialization."""
     llm = initialize_model(_model)
     return generate_graph(llm)
 
-graph = load_graph(model_name)
+graph = load_graph_cached(model_name)
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
 # 4. MAIN UI
@@ -60,10 +121,11 @@ if st.session_state.finalized:
     st.markdown(blog_part)
 
     # 2. Display the SEO Box
-    st.info(f"🔍 SEO Metadata\n\n{seo_part.strip()}")
+    with st.expander("🔍 View SEO Metadata"):
+        st.info(seo_part.strip())
+
     st.divider()
 
-    # Use our new NLTK summarizer
     smart_summary = nltk_summarizer(blog_part, num_sentences=3)    
     # Display the NLTK summary in a nice callout box
     with st.container():
@@ -73,7 +135,6 @@ if st.session_state.finalized:
 
     col_a, col_b = st.columns(2)
 
-    # NEW: Download Button
     with col_a:
         st.download_button(
             label="📥 Download Blog as Markdown",
@@ -124,16 +185,35 @@ elif st.session_state.graph_state:
 
 # --- MODE C: INITIAL INPUT VIEW ---
 else:
-    video_url = st.text_input("Paste YouTube URL here:", placeholder="https://www.youtube.com/watch?v=...")
-    
+    video_url = st.text_input("Paste YouTube URL here:", placeholder="https://www.youtube.com/watch?v=...").strip()
+
     if st.button("🚀 Generate Blog Draft"):
+        session_id = get_session_id()
+        # Store the session_id in the configurable field
+        config = {"configurable": {"thread_id": st.session_state.thread_id, "session_id": session_id}}
+                
         if video_url:
-            initial_input = {"video_url": video_url, "transcript": "", "blog": "", "feedback": "", "final_blog": "","tone": blog_tone}
-            with st.spinner("Analyzing video and writing draft..."):
-                # Run graph until it hits the interrupt_before "human_feedback"
-                for event in graph.stream(initial_input, config):
-                    pass
-            st.session_state.graph_state = graph.get_state(config)
-            st.rerun()
-        else:
-            st.error("Please enter a valid URL.")
+            if "youtube.com/" not in video_url and "youtu.be/" not in video_url:
+                st.warning("⚠️ Please provide a valid YouTube link.")
+                logger.warning(f"USER_ID: {session_id} | INVALID URL: {video_url}")
+            else:
+                logger.info(f"USER_ID: {session_id} | ACTION: Start Generation | URL: {video_url}")
+                initial_input = {
+                    "video_url": video_url, 
+                    "transcript": "", 
+                    "blog": "", 
+                    "feedback": "", 
+                    "final_blog": "",
+                    "tone": blog_tone}
+                try:
+                    with st.spinner("Analyzing video and writing draft..."):
+                        # Run graph until it hits the interrupt_before "human_feedback"
+                        for event in graph.stream(initial_input, config):
+                            pass
+                    st.session_state.graph_state = graph.get_state(config)
+                    st.rerun()
+                except Exception as e:
+                    # 1. Log the error for yourself (this goes to the Manage App console)
+                    logger.error(f"USER_ID: {session_id} | CRASH: {str(e)}", exc_info=True)
+                    # 2. Show a friendly message to the user
+                    st.error("An unexpected error occurred. Our team has been notified. Please try again later.")
