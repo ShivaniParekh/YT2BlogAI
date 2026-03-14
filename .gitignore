@@ -1,7 +1,7 @@
 venv/
 .env
 __pycache__/
-.devcontainer
+.devcontainer/
 .langgraph_api/
 .vscode/
 chatgpt.txt
